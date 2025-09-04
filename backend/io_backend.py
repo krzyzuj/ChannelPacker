@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 from backend.image_lib import (ImageObj, save_image as save_image_file)
 
-from settings import (CUSTOM_FOLDER_NAME, BACKUP_FOLDER_NAME, ALLOWED_FILE_TYPES, FILE_TYPE, DELETE_USED)
+from settings import (DEST_FOLDER_NAME, BACKUP_FOLDER_NAME, ALLOWED_FILE_TYPES, FILE_TYPE, DELETE_USED)
 
 from utils import log
 
@@ -27,18 +27,7 @@ class CPContext:
 
 #                                     === Channel Packer core interface ===
 
-def validate_safe_folder_name(raw_name: Optional[str]) -> str:
-# Validates that the custom folder name doesn't include unsupported characters.
 
-    name: str = (raw_name or "")
-    if name.strip() == "":
-        return ""
-
-    if any(ch in name for ch in '\\/:*?"<>|'):
-        log(f"Aborted: invalid folder name '{raw_name}'. It cannot contain \\ / : * ? \" < > |", "error")
-        # Prints error.
-        raise SystemExit(1)
-    return name.strip()
 
 
 def validate_export_ext_ctx(ctx: "CPContext" = None) -> None:
@@ -83,24 +72,6 @@ def split_by_parent(ctx: "CPContext") -> Dict[str, List[str]]:
     return {k: sorted(v) for k, v in sorted(groups.items(), key=lambda kv: kv[0])}
 
 
-def make_output_dirs(base_path: str) -> tuple[str, Optional[str]]:
-# Creates/returns the output and optional backup directories for a given base path:
-# ctx used only in the Unreal version.
-
-    base_path = os.path.abspath(base_path or ".")
-    out_name = (CUSTOM_FOLDER_NAME or "").strip()
-    out_dir = os.path.join(base_path, out_name) if out_name else base_path
-    os.makedirs(out_dir, exist_ok=True)
-
-    bak_dir = None
-    bak_name = (BACKUP_FOLDER_NAME or "").strip()
-    if bak_name:
-        bak_dir = os.path.join(base_path, bak_name)
-        os.makedirs(bak_dir, exist_ok=True)
-
-    return out_dir, bak_dir
-
-
 def list_initial_files(input_folder: str, ctx: "CPContext" = None, recursive: bool = False,) -> list[str]:
 # Lists candidate files from input_folder. On Windows returns paths relative to work_dir - where are located the input files.
 # Recursive is not used on Windows.
@@ -117,7 +88,7 @@ def list_initial_files(input_folder: str, ctx: "CPContext" = None, recursive: bo
     files: list[str] = []
 
     blocked_dirs = {
-        n.strip() for n in (CUSTOM_FOLDER_NAME, BACKUP_FOLDER_NAME)
+        n.strip() for n in (DEST_FOLDER_NAME, BACKUP_FOLDER_NAME)
         if n and n.strip()
     }
 
@@ -152,7 +123,7 @@ def prepare_workspace(_assets_keys_unused: List[str], ctx: "CPContext" = None) -
 
     work_dir: str = os.path.abspath(ctx.work_dir or ".")
     blocked_dirs = {
-        n.strip() for n in (CUSTOM_FOLDER_NAME, BACKUP_FOLDER_NAME)
+        n.strip() for n in (DEST_FOLDER_NAME, BACKUP_FOLDER_NAME)
         if n and n.strip()
     }
 

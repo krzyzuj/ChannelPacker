@@ -1,18 +1,18 @@
 
-[mandatory]	      input_folder:  folder path       -  path to the source textures for channel packing; can be overridden via a cli argument when running the command
+[mandatory]	      input_folder:  folder path       -  path to the source textures for the channel packing; can be overridden via a cli argument when running the command
 [mandatory]	         file_type:  file ext          -  file type extension for the created texture files
 [optional]	       delete_used:  true/false        -  deletes source files used by the function after packing;   if empty: false
 
-[mandatory]         resize_strategy:  up/down          -  resolves resolution mismatches within a set, by scaling the textures up or down
-[optional]       backup_folder_name:  folder name      -  if set, moves files used for texture generation into this folder after packing is finished
-[optional]       custom_folder_name:  folder name      -  if set, saves generated textures into this subfolder
+[optional]       dest_folder_name:  folder name    -  if set, moves used files into this subfolder after packing
+[optional]       backup_folder_name:  folder name  -  if set, saves generated textures into this subfolder
+[mandatory]         resize_strategy:  up/down      -  resolves resolution mismatches within a set, by scaling the textures up or down
 
 		packing_modes:
 [mandatory]	          mode_name:  mode id          -  must not be empty to be considered by the function
-[optional]	      custom_suffix:  suffix name      -  custom suffix for created textures;   if empty: generated from mapped texture types
-[mandatory]	           channels: texture map types -  mapped to each channel of the final generated texture; alpha can be left empty
+[optional]	      custom_suffix:  suffix name      -  custom suffix for created textures;   if empty: then it's generated from mapped texture types
+[mandatory]	           channels: texture map types -  textures mapped to each channel of the final generated texture; alpha can be left empty
 		                                              for RGB maps (e.g., Normal), specify the component to map, e.g., Normal_R
-	
+
 [optional]	       show_details:   true/false      -  shows additional info in logs
 
 

@@ -6,9 +6,9 @@ import re
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 from collections import defaultdict
 
-from settings import SIZE_SUFFIXES
+from settings import (BACKUP_FOLDER_NAME, DEST_FOLDER_NAME, SIZE_SUFFIXES)
 
-from backend.texture_classes  import TextureMapData, MapNameAndRes
+from backend.texture_classes  import (TextureMapData, MapNameAndRes)
 
 from backend.image_lib import close_image
 
@@ -113,6 +113,23 @@ def is_power_of_two(n: int) -> bool:
     return (n & (n - 1) == 0) and n != 0
 
 
+def make_output_dirs(base_path: str) -> tuple[str, Optional[str]]:
+# Creates/returns the output and optional backup directories for a given base path:
+
+    base_path = os.path.abspath(base_path or ".")
+    out_name = (DEST_FOLDER_NAME or "").strip()
+    out_dir = os.path.join(base_path, out_name) if out_name else base_path
+    os.makedirs(out_dir, exist_ok=True)
+
+    bak_dir = None
+    bak_name = (BACKUP_FOLDER_NAME or "").strip()
+    if bak_name:
+        bak_dir = os.path.join(base_path, bak_name)
+        os.makedirs(bak_dir, exist_ok=True)
+
+    return out_dir, bak_dir
+
+
 def match_suffixes(name_lower: str, type_suffix: str, size_suffix: str) -> Optional[str]:
     # Takes into account different naming conventions, returns the regex pattern that matches one.
     # type...size, size...type, ...type
@@ -148,3 +165,17 @@ def resolution_to_suffix(size: Tuple[int, int]) -> str:
             return label
         # Returns the full size if it does not match any suffix threshold.
     return f"{width}px"
+
+
+def validate_safe_folder_name(raw_name: Optional[str]) -> str:
+# Validates that the custom folder name doesn't include unsupported characters.
+
+    name: str = (raw_name or "")
+    if name.strip() == "":
+        return ""
+
+    if any(ch in name for ch in '\\/:*?"<>|'):
+        log(f"Aborted: invalid folder name '{raw_name}'. It cannot contain \\ / : * ? \" < > |", "error")
+        # Prints error.
+        raise SystemExit(1)
+    return name.strip()

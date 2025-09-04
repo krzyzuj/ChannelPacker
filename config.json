@@ -3,9 +3,9 @@
   "FILE_TYPE": "png",
   "DELETE_USED": false,
 
-  "RESIZE_STRATEGY": "down",
+  "DEST_FOLDER_NAME": "created maps",
   "BACKUP_FOLDER_NAME": "",
-  "CUSTOM_FOLDER_NAME": "created maps",
+  "RESIZE_STRATEGY": "down",
 
   "PACKING_MODES": [
     {
@@ -39,7 +39,5 @@
       }
     }
   ],
-
   "SHOW_DETAILS": false
-
   }

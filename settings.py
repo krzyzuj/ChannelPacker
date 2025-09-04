@@ -3,7 +3,6 @@
 
 import json
 import os
-from dataclasses import dataclass
 from typing import List, Tuple
 
 from backend.texture_classes import PackingMode, TextureTypeConfig
@@ -33,12 +32,13 @@ with open(_config_path, "r", encoding="utf-8") as f:
 INPUT_FOLDER: str = _config_data.get("INPUT_FOLDER", "").strip() # Folder containing textures to be packed.
 FILE_TYPE: str = _config_data.get("FILE_TYPE", "png") # File type of generated channel-packed textures.
 DELETE_USED: bool = _as_bool(_config_data.get("DELETE_USED", False))  # Deletes the files used for channel packing.
-SHOW_DETAILS: bool = _as_bool(_config_data.get("SHOW_DETAILS", False)) # Shows details like exact resolution when printing logs.
+DEST_FOLDER_NAME: str = _config_data.get("DEST_FOLDER_NAME", "created_maps") # If provided, places generated channel-packed maps into a custom folder.
+BACKUP_FOLDER_NAME: str = _config_data.get("BACKUP_FOLDER_NAME", "") # If provided, moves source maps used during generation into a backup folder after creating the channel-packed map.
 
 RESIZE_STRATEGY: str = _config_data.get("RESIZE_STRATEGY", "down") # Specifies how textures are rescaled when resolutions differ within a set: down to the smallest or up to the largest.
 PACKING_MODES: list[PackingMode] = _config_data.get("PACKING_MODES", []) # Uses TEXTURE_CONFIG keys for texture maps to be put into channels. The packing mode is skipped if "name": is empty.
-BACKUP_FOLDER_NAME: str = _config_data.get("BACKUP_FOLDER_NAME", "") # If provided, moves source maps used during generation into a backup folder after creating the channel-packed map.
-CUSTOM_FOLDER_NAME: str = _config_data.get("CUSTOM_FOLDER_NAME", "created_maps") # If provided, places generated channel-packed maps into a custom folder.
+
+SHOW_DETAILS: bool = _as_bool(_config_data.get("SHOW_DETAILS", False)) # Shows details like exact resolution when printing logs.
 
 
 

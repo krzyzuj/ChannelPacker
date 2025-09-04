@@ -28,14 +28,15 @@ Channel Packer requires Python 3.11 with [Pillow](https://pillow.readthedocs.io/
 ## Config
 &NewLine;
 
-| mandatory | label | input type | description | if empty 
-|-----------|------------|-------------|-----------|-----------|
-| yes | input_folder | folder path | path to the source textures; can be overridden via a CLI argument | x |
-| yes | file_type | file ext | file type extension for the created texture files | png |
-| no | delete_used | true/false | deletes used source files after packing | false |
-| no | resize_strategy | up/down | resolves resolution mismatches within a set, by scaling the textures up or down | down |
-| no | backup_folder_name | folder name | moves used files into this subfolder after packing | - |
-| no | custom_folder_name | folder name | saves generated textures into this subfolder | - |
-| yes | mode_name | mode id | must not be empty to be considered by the function | x |
-| no |custom_suffix | suffix name | custom suffix for the created textures | auto|
-| yes |channels | texture map types | textures mapped to each channel of the final generated texture; alpha can be left empty | x |
+| mandatory | label              | input type        | description                                                                             | if empty 
+|-----------|--------------------|-------------------|-----------------------------------------------------------------------------------------|----------|
+| yes       | input_folder       | folder path       | path to the source textures; can be overridden via a CLI argument                       | x        |
+| yes       | file_type          | file ext          | file type extension for the created texture files                                       | png      |
+| no        | delete_used        | true/false        | deletes used source files after packing                                                 | false    |
+| no        | backup_folder_name | folder name       | moves used files into this subfolder after packing                                      | -        |
+| no        | custom_folder_name | folder name       | saves generated textures into this subfolder                                            | -        |
+| no        | resize_strategy    | up/down           | resolves resolution mismatches within a set, by scaling the textures up or down         | down     |
+| yes       | mode_name          | mode id           | must not be empty to be considered by the function                                      | x        |
+| no        | custom_suffix      | suffix name       | custom suffix for the created textures                                                  | auto     |
+| yes       | channels           | texture map types | textures mapped to each channel of the final generated texture; alpha can be left empty | x        |
+| no        | show_details       | true/false        | shows additional information in the logs                                                | x        |
