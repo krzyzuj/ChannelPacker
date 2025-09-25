@@ -6,6 +6,7 @@
   "DEST_FOLDER_NAME": "created maps",
   "BACKUP_FOLDER_NAME": "",
   "RESIZE_STRATEGY": "down",
+  "EXR_SRGB_CURVE": true,
 
   "PACKING_MODES": [
     {

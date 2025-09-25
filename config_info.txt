@@ -1,10 +1,11 @@
 
 [mandatory]	      input_folder:  folder path       -  path to the source textures for the channel packing; can be overridden via a cli argument when running the command
-[mandatory]	         file_type:  file ext          -  file type extension for the created texture files
+[mandatory]	         file_type:  file ext          -  output file type   if empty: png
 [optional]	       delete_used:  true/false        -  deletes source files used by the function after packing;   if empty: false
 
 [optional]       dest_folder_name:  folder name    -  if set, moves used files into this subfolder after packing
 [optional]       backup_folder_name:  folder name  -  if set, saves generated textures into this subfolder
+[optional]        exr_srgb_curve:   true/false     -  if set, applies sRGB gamma curve when converting float texture2D, mimicking Photoshop behavior, when converting with gamma 1.0/exposure 0.0;  if empty: true
 [mandatory]         resize_strategy:  up/down      -  resolves resolution mismatches within a set, by scaling the textures up or down
 
 		packing_modes:
@@ -30,6 +31,8 @@ supported map names:
 - Translucency
 - Specular
 - Normal
+- BentNormal
+- Bump
 - Albedo
 - SSS
 - Emissive

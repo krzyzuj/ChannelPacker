@@ -1,10 +1,17 @@
 
-""" Image processing backend for channel_packer. Currently implemented using Pillow (PIL). """
+""" Image processing backend. Currently implemented using Pillow (PIL). PIL exports 8bit images only."""
 
+
+
+#                                           === Backend ===
+
+from array import array
 from typing import Any, Sequence, Tuple, TypeAlias
 
 from PIL import Image as _PIL
 from PIL.Image import Image as PILImage
+from PIL import Image as PILImageModule
+from PIL import ImageChops
 
 ImageObj: TypeAlias = PILImage
 
@@ -13,6 +20,11 @@ def close_image(im: object) -> None:
     close = getattr(im, "close", None)
     if callable(close):
         close()
+
+
+def from_array_u8(data: Any, mode: str) -> ImageObj:
+# Creates an image from a uint8 numpy array.
+    return PILImageModule.fromarray(data, mode)
 
 
 def get_bands(im: ImageObj) -> Tuple[str, ...]:
@@ -59,6 +71,71 @@ def save_image(im: Any, path: str) -> None:
     im.save(path)
 
 
-def to_grayscale(im: ImageObj) -> ImageObj:
-# Convert an image to 8-bit grayscale ('L' mode):
-    return im.convert("L")
+
+
+#                                           === Utils ===
+
+
+
+def is_grayscale(im: ImageObj) -> bool:
+# Returns True if the image is of type grayscale image.
+
+    m = get_mode(im)
+    return m in ("L", "LA") or m == "I" or str(m).startswith("I;16")
+
+
+def are_channels_equal(im: ImageObj, ch1: str, ch2: str) -> bool:
+# Returns True if both channels are identical.
+
+    try:
+        c1 = get_channel(im, ch1)
+        c2 = get_channel(im, ch2)
+        return ImageChops.difference(c1, c2).getbbox() is None
+    except Exception:
+        return False
+
+
+def is_rgb_grayscale(img: ImageObj) -> bool:
+# Checks if RGB texture is just a grayscale image saved as RGB instead of L.
+
+    try:
+        ext = img.getextrema()  # (Rmin,Rmax),(Gmin,Gmax),(Bmin,Rmax),(Amin,Amax)
+        if not ext or len(ext) < 2 or ext[0] != ext[1]:
+            return False
+        # Pre-validation: checks if the channels extremes are the same.
+
+    except Exception:
+        pass
+    return are_channels_equal(img, "R", "G")
+
+
+def to_grayscale(img: ImageObj) -> ImageObj:
+# Converts an image to 8-bit grayscale.
+    mode = img.mode
+    if mode == "L":
+        return img
+    if mode in ("I", "I;16", "I;16L", "I;16B"):
+        return _16_to_8bit(img)
+    return img.convert("L")
+
+
+def _16_to_8bit(img: ImageObj) -> ImageObj:
+# Scales down 16bit range to a 8bit, so values are properly maintained instead of being clipped.
+
+# Preparing the image:
+    if img.mode == "I":
+        img16 = img.convert("I;16")
+    elif img.mode in ("I;16", "I;16L", "I;16B"):
+        img16 = img if img.mode == "I;16" else img.convert("I;16")
+    # Normalizes the image type to 16bit LE.
+    else:
+        return img.convert("L")
+    # If the image is just 8bit grayscale, passes it though.
+
+    raw = img16.tobytes("raw", "I;16")  # LE 16bit
+    data16 = array("H")
+    data16.frombytes(raw)
+
+# Scaling:
+    data8 = bytearray((v >> 8) & 0xFF for v in data16)
+    return PILImageModule.frombytes("L", img16.size, bytes(data8))
