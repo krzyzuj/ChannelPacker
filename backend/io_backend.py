@@ -9,24 +9,24 @@ from typing import Dict, List, Set, Optional
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from backend.image_lib import (ImageObj, save_image as save_image_file)
+from backend.image_lib import (ImageObject, save_image as save_image_file)
 
-from settings import (ALLOWED_FILE_TYPES, BACKUP_FOLDER_NAME, DELETE_USED, DEST_FOLDER_NAME, EXR_SRGB_CURVE, FILE_TYPE, SHOW_DETAILS)
+from settings import (ALLOWED_FILE_TYPES, BACKUP_FOLDER_NAME, DELETE_USED, TARGET_FOLDER_NAME, EXR_SRGB_CURVE, FILE_TYPE, SHOW_DETAILS)
 from utils import (check_exr_libraries, convert_exr_to_image, log)
 
 
 @dataclass
-class ConvertedEntry:
-    src_exr: str # Path to the source .exr file.
-    set_key: Optional[str] = None # Texture set name, added later.
-    map_type: Optional[str] = None # Texture type name.
+class ConvertedEXRImage:
+    source_exr_path: str # Path to the source .exr file.
+    texture_set_name: Optional[str] = None # Texture set name, added later.
+    texture_map_type: Optional[str] = None # Texture type name.
 
 @dataclass
 class CPContext:
-    work_dir: str = None # Absolute path for a temporary folder.
-    selection_paths: Dict[str, str] = field(default_factory=dict) # Maps input keys (rel path on Windows) to their absolute file path.
-    export_ext: str = "" # Validated file extension set in config.
-    converted_from_raw: Dict[str, ConvertedEntry] = field(default_factory=dict)  # Collection of temporary converted .exr files, for processing in the main module, their raw_source path, and their texture set.
+    work_directory: str = None # Absolute path for a temporary folder.
+    selection_paths_map: Dict[str, str] = field(default_factory=dict) # Maps paths relative to the root directory to their absolute file paths.
+    export_extension: str = "" # Validated file extension set in config.
+    textures_converted_from_raw: Dict[str, ConvertedEXRImage] = field(default_factory=dict)  # Collection of temporary converted .exr files for processing in the main module, their raw_source path, texture set name and its texture type.
 
 
 RAW_SOURCE_TYPES: tuple[str] = (".exr",)  # Makes .exr file discoverable by the script additionally to the "regular" file format types.
@@ -39,54 +39,52 @@ RAW_SOURCE_TYPES: tuple[str] = (".exr",)  # Makes .exr file discoverable by the 
 
 
 
-def validate_export_ext_ctx(ctx: "CPContext" = None) -> None:
+def context_validate_export_extension(context: "CPContext" = None) -> None:
 # Validates and sets in context extension input by the user in config.
 # Sets the extension type, without the dot.
 
-    allowed: set[str] = set(ALLOWED_FILE_TYPES)
-    raw_ext: str = (FILE_TYPE or "").strip().lower().lstrip(".")
+    allowed_file_types: set[str] = set(ALLOWED_FILE_TYPES)
+    typed_extension: str = (FILE_TYPE or "").strip().lower().lstrip(".")
 
-    if raw_ext == "jpg":
-        ext: str = "jpeg"
+    if typed_extension == "jpg":
+        file_extension: str = "jpeg"
     else:
-        ext: str = raw_ext
+        file_extension: str = typed_extension
 
-    if not ext or ext not in allowed:
-        pretty_allowed = ", ".join(sorted(allowed))
-        log(f"Aborted: Invalid FILE_TYPE '{FILE_TYPE}'. Supported: {pretty_allowed}", "error")
+    if not file_extension or file_extension not in allowed_file_types:
+        sorted_allowed_file_types = ", ".join(sorted(allowed_file_types))
+        log(f"Aborted: Invalid FILE_TYPE '{FILE_TYPE}'. Supported: {sorted_allowed_file_types}", "error")
         raise SystemExit(1)
 
-    if ctx is not None:
-        ctx.export_ext = ext
+    if context is not None:
+        context.export_extension = file_extension
     return
 
 
-def split_by_parent(ctx: "CPContext") -> Dict[str, List[str]]:
-# Groups absolute paths from ctx.selection_paths values by their parent directory relative to ctx.work_dir.
+def split_by_parent(context: "CPContext") -> Dict[str, List[str]]:
+# Groups absolute paths from context.selection_paths values by their parent directory relative to contex.work_dir.
 # Returns a sorted rel_parent: [file names] map.
 
-    getattr(ctx, "work_dir", None)
-    files_abs: List[str] = [v for v in getattr(ctx, "selection_paths", {}).values() if v]
-    root: str = os.path.abspath(ctx.work_dir)
-    groups: Dict[str, List[str]] = defaultdict(list)
+    file_absolute_paths: List[str] = [absolute_path for absolute_path in context.selection_paths_map.values() if absolute_path and absolute_path.strip()]
+    root_directory: str = os.path.abspath(context.work_directory)
+    filenames_by_parent_folder: Dict[str, List[str]] = defaultdict(list)
 
-    for ap in files_abs:
-        if not os.path.isabs(ap):
-            ap = os.path.abspath(ap)
+    for file_absolute_path in file_absolute_paths:
+        if not os.path.isabs(file_absolute_path):
+            file_absolute_path = os.path.abspath(file_absolute_path)
         try:
-            rel = os.path.relpath(ap, root)
+            relative_path: str = os.path.relpath(file_absolute_path, root_directory)
         except Exception:
             continue
-        rel = rel.replace("\\", "/")
-        parent = os.path.dirname(rel)
-        key = parent if parent else "."
-        name = os.path.basename(rel)
-        groups[key].append(name)
+        relative_path: str = relative_path.replace("\\", "/")
+        parent_directory_ = os.path.dirname(relative_path.replace("\\", "/")) or "."
+        filename_ = os.path.basename(relative_path)
+        filenames_by_parent_folder[parent_directory_].append(filename_)
 
-    return {k: sorted(v) for k, v in sorted(groups.items(), key=lambda kv: kv[0])}
+    return {parent_directory: sorted(filename) for parent_directory, filename in sorted(filenames_by_parent_folder.items())}
 
 
-def list_initial_files(input_folder: str, ctx: "CPContext" = None, recursive: bool = False,) -> list[str]:
+def list_initial_files(input_folder: str, context: "CPContext" = None, recursive: bool = False, ) -> list[str]:
 # Lists candidate files from input_folder. On Windows returns paths relative to work_dir - where are located the input files.
 # Recursive is not used on Windows.
 
@@ -94,224 +92,171 @@ def list_initial_files(input_folder: str, ctx: "CPContext" = None, recursive: bo
 
 
     if not input_folder:
-        if ctx is not None:
-            ctx.selection_paths = {}
+        if context is not None:
+            context.selection_paths_map = {}
         return []
 
-    base = os.path.abspath(input_folder)
-    if ctx is not None:
-        ctx.work_dir = base  # setting CTX work dir
+    root_directory = os.path.abspath(input_folder)
+    if context is not None:
+        context.work_directory = root_directory  # setting context work dir
 
-    files: list[str] = []
+    relative_paths: list[str] = []
 
-    blocked_dirs = {
-        n.strip() for n in (DEST_FOLDER_NAME, BACKUP_FOLDER_NAME)
-        if n and n.strip()
+    blocked_directories = {
+        directory_name.strip() for directory_name in (TARGET_FOLDER_NAME, BACKUP_FOLDER_NAME)
+        if directory_name and directory_name.strip()
     }
 
     if recursive:
-        for root, dirs, names in os.walk(base):
-            dirs[:] = [d for d in dirs if d not in blocked_dirs]
-            for nm in names:
-                if nm.lower().endswith(source_file_types):
-                    abs_p = os.path.join(root, nm)
-                    rel_p = os.path.relpath(abs_p, base).replace("\\", "/")
-                    files.append(rel_p)
+        for root, subdirectories, filenames in os.walk(root_directory):
+            subdirectories[:] = [subdirectory for subdirectory in subdirectories if subdirectory not in blocked_directories]
+            for filename in filenames:
+                if filename.lower().endswith(source_file_types):
+                    absolute_path = os.path.join(root, filename)
+                    relative_path = os.path.relpath(absolute_path, root_directory).replace("\\", "/")
+                    relative_paths.append(relative_path)
     else:
-        for nm in os.listdir(base):
-            if nm.lower().endswith(source_file_types):
-                abs_p = os.path.join(base, nm)
-                if os.path.isfile(abs_p):
-                    files.append(nm)
+        for filename in os.listdir(root_directory):
+            if filename.lower().endswith(source_file_types):
+                absolute_path = os.path.join(root_directory, filename)
+                if os.path.isfile(absolute_path):
+                    relative_paths.append(filename)
 
-    files.sort()
-    ctx.selection_paths = {rel: "" for rel in files}
+    relative_paths.sort()
+    context.selection_paths_map = {relative_path_: "" for relative_path_ in relative_paths}
     # Collects relative file paths as keys in the dict, prepare_workspace fills in values as absolute paths.
     # For compatibility reasons with Engine paths - engine assets need exporting first during prepare_workspace.
-    return files
+    return relative_paths
 
 
-def prepare_workspace(_assets_keys_unused: List[str], ctx: "CPContext" = None) -> None:
+def prepare_workspace(_assets_keys_unused: List[str], context: "CPContext" = None) -> None:
 # Resolves each relative path from ctx.selection_paths (keys) to an absolute path under ctx.work_dir (values).
 # Removes entries whose path contains DEST_FOLDER_NAME or BACKUP_FOLDER_NAME to avoid reprocessing output/backup folders.
 
-    if not ctx.work_dir:
+    if not context.work_directory:
         return
 
-    work_dir: str = os.path.abspath(ctx.work_dir or ".")
-    blocked_dirs = {n.strip() for n in (DEST_FOLDER_NAME, BACKUP_FOLDER_NAME)if n and n.strip()}
+    work_directory: str = os.path.abspath(context.work_directory or ".")
+    blocked_folder_names = {folder_name.strip() for folder_name in (TARGET_FOLDER_NAME, BACKUP_FOLDER_NAME) if folder_name and folder_name.strip()}
 
-    for rel in list(ctx.selection_paths.keys()):
-        parts = [seg for seg in rel.split("/") if seg]
+    for relative_path in list(context.selection_paths_map.keys()):
+        path_segments = [path_segment for path_segment in relative_path.split("/") if path_segment]
 
-        if any(seg in blocked_dirs for seg in parts):
-            ctx.selection_paths.pop(rel, None)
+        if any(path_segment in blocked_folder_names for path_segment in path_segments):
+            context.selection_paths_map.pop(relative_path, None)
             continue
         # Skips to avoid reprocessing output/backup folders.
 
-        abs_path = os.path.abspath(os.path.join(work_dir, rel)).replace("\\", "/")
-        ext = os.path.splitext(abs_path)[1].lower()
+        absolute_path = os.path.abspath(os.path.join(work_directory, relative_path)).replace("\\", "/")
+        source_file_extension = os.path.splitext(absolute_path)[1].lower()
 
 
-        if ext in RAW_SOURCE_TYPES:
+        if source_file_extension in RAW_SOURCE_TYPES:
             if check_exr_libraries():
-                out_path = convert_exr_to_image(abs_path, ext = ctx.export_ext, delete_src = False, srgb_transform = EXR_SRGB_CURVE)
-                if out_path:
-                    ctx.selection_paths[rel] = out_path
-                    ctx.converted_from_raw[out_path] = ConvertedEntry(src_exr=abs_path) # Mapping the temporary converted files, for logs and to be later deleted during the cleanup.
+                output_path = convert_exr_to_image(absolute_path, file_extension= context.export_extension, delete_source_files= False, srgb_transform = EXR_SRGB_CURVE)
+                if output_path:
+                    context.selection_paths_map[relative_path] = output_path
+                    context.textures_converted_from_raw[output_path] = ConvertedEXRImage(source_exr_path=absolute_path) # Mapping the temporary converted files, for logs and to be later deleted during the cleanup.
                 else:
-                    ctx.selection_paths.pop(rel, None)
-                    log(f"Skipping '{abs_path}': cannot convert EXR to {ctx.export_ext}.", "error")
+                    context.selection_paths_map.pop(relative_path, None)
+                    log(f"Skipping '{absolute_path}': cannot convert EXR to {context.export_extension}.", "error")
             else:
-                ctx.selection_paths.pop(rel, None)
-                log(f"Skipping '{abs_path}': EXR runtime missing (OpenEXR/NumPy).", "warn")
+                context.selection_paths_map.pop(relative_path, None)
+                log(f"Skipping '{absolute_path}': EXR runtime missing (OpenEXR/NumPy).", "warn")
             continue
         # Pre-processing the .exr files.
 
-        ctx.selection_paths[rel] = abs_path
+        context.selection_paths_map[relative_path] = absolute_path
 
 
-def save_image(img: ImageObj, out_dir: str, filename: str, mode_name: str, ctx: Optional["CPContext"]) -> None:
+def save_image(image: ImageObject, output_directory: str, filename: str, packing_mode_name: str, context: Optional["CPContext"]) -> None:
 # On Windows just saves to out_dir.
-# Mode_name and ctx used only in the Unreal version.
-    os.makedirs(out_dir, exist_ok=True)
-    ext = (getattr(ctx, "export_ext", "") or "png").lstrip(".").lower() if ctx else "png"
-    out_path = os.path.join(out_dir, f"{filename}.{ext}")
+# Packing_mode_name and context are used only in the Unreal version.
+
+    os.makedirs(output_directory, exist_ok=True)
+    output_extension = (getattr(context, "export_ext", "") or "png").lstrip(".").lower() if context else "png"
+    output_path = os.path.join(output_directory, f"{filename}.{output_extension}")
     try:
-        save_image_file(img, out_path)
+        save_image_file(image, output_path)
         return True
     except Exception:
         return False
 
 
-def move_used_map(src_path: str, bak_dir: Optional[str], ctx: Optional["CPContext"]) -> None:
+def move_used_map(source_path: str, backup_directory: Optional[str], context: Optional["CPContext"]) -> None:
  # Moves maps used to generate the channel-packed texture to the backup folder if specified in the config.
- # ctx used only in the Unreal version.
+ # Context used only in the Unreal version.
 
 
-    if not bak_dir or DELETE_USED:
+    if not backup_directory or DELETE_USED:
         return
     try:
-        if not src_path or not os.path.exists(src_path):
+        if not source_path or not os.path.exists(source_path):
             return
 
-        os.makedirs(bak_dir, exist_ok=True)
+        os.makedirs(backup_directory, exist_ok=True)
 
-        base = os.path.basename(src_path)
-        dest = os.path.join(bak_dir, base)
+        filename = os.path.basename(source_path)
+        target_path = os.path.join(backup_directory, filename)
 
 
-        if os.path.exists(dest):
-            name, ext = os.path.splitext(base)
+        if os.path.exists(target_path):
+            filename, file_extension = os.path.splitext(filename)
             i = 2
             while True:
-                alt = os.path.join(bak_dir, f"{name}_{i}{ext}")
-                if not os.path.exists(alt):
-                    dest = alt
+                alternative_path = os.path.join(backup_directory, f"{filename}_{i}{file_extension}")
+                if not os.path.exists(alternative_path):
+                    target_path = alternative_path
                     break
                 i += 1
         # Adds suffixes in case same named files end up in the directory.
 
-        shutil.move(src_path, dest)
+        shutil.move(source_path, target_path)
 
-    except Exception as e:
-        log(f"Warning: failed to move '{src_path}' → '{bak_dir}': {e}", "warn")
+    except Exception as error:
+        log(f"Warning: failed to move '{source_path}' to '{backup_directory}': {error}", "warn")
 
 
-def cleanup(ctx: "CPContext") -> None:
+def cleanup(context: "CPContext") -> None:
 # On Windows only deletes the files used for the generation if set in config.
 
 # Deleting temporary files from .exr conversion.:
-    temp_paths: set = set(ctx.converted_from_raw.keys())
-    for p in temp_paths:
-        if p and os.path.isfile(p):
+    temporary_paths: set = set(context.textures_converted_from_raw.keys())
+    for path in temporary_paths:
+        if path and os.path.isfile(path):
             try:
-                os.remove(p)
+                os.remove(path)
             except FileNotFoundError:
                 pass
-            except PermissionError as e:
-                log(f"No permission to remove temp '{p}': {e}", "warn")
-            except OSError as e:
-                log(f"Failed to remove temp '{p}': {e}", "warn")
+            except PermissionError as error:
+                log(f"No permission to remove temp '{path}': {error}", "warn")
+            except OSError as error:
+                log(f"Failed to remove temp '{path}': {error}", "warn")
 
     if not DELETE_USED:
         return
 
 
 # Deleting regular images used for packing:
-    sel_map: Dict[str, str] = getattr(ctx, "selection_paths", {}) or {}
-    for ap in sel_map.values():
-        if not ap:
+    selection_paths: Dict[str, str] = context.selection_paths_map
+    for absolute_path in selection_paths.values():
+        if not absolute_path:
             continue
         try:
-            if os.path.isfile(ap):
-                os.remove(ap)
+            if os.path.isfile(absolute_path):
+                os.remove(absolute_path)
         except FileNotFoundError:
             pass
-        except PermissionError as e:
-            log(f"No permission to remove '{ap}': {e}", "warn")
-        except OSError as e:
-            log(f"Failed to remove '{ap}': {e}", "warn")
+        except PermissionError as error:
+            log(f"No permission to remove '{absolute_path}': {error}", "warn")
+        except OSError as error:
+            log(f"Failed to remove '{absolute_path}': {error}", "warn")
 
 # Deleting original .exr files used for packing:
-    raw_sources: Set[str] = {p for p in ctx.converted_from_raw.values() if p}
-    for raw in raw_sources:
-        if os.path.isfile(raw):
-            try: os.remove(raw)
+    raw_source_paths: Set[ConvertedEXRImage] = {path for path in context.textures_converted_from_raw.values() if path}
+    for raw_source_path in raw_source_paths:
+        if os.path.isfile(raw_source_path):
+            try: os.remove(raw_source_path)
             except FileNotFoundError: pass
-            except PermissionError as e: log(f"No permission to remove '{raw}': {e}", "warn")
-            except OSError as e: log(f"Failed to remove '{raw}': {e}", "warn")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+            except PermissionError as error: log(f"No permission to remove '{raw_source_path}': {error}", "warn")
+            except OSError as error: log(f"Failed to remove '{raw_source_path}': {error}", "warn")

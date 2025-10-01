@@ -13,62 +13,62 @@ from PIL.Image import Image as PILImage
 from PIL import Image as PILImageModule
 from PIL import ImageChops
 
-ImageObj: TypeAlias = PILImage
+ImageObject: TypeAlias = PILImage
 
 
-def close_image(im: object) -> None:
-    close = getattr(im, "close", None)
+def close_image(image: object) -> None:
+    close = getattr(image, "close", None)
     if callable(close):
         close()
 
 
-def from_array_u8(data: Any, mode: str) -> ImageObj:
+def from_array_u8(data: Any, mode: str) -> ImageObject:
 # Creates an image from a uint8 numpy array.
     return PILImageModule.fromarray(data, mode)
 
 
-def get_bands(im: ImageObj) -> Tuple[str, ...]:
+def get_channel(image: ImageObject, ch: str) -> ImageObject:
+# Extracts a single channel by name ("R","G","B","A","L")
+    return image.getchannel(ch.upper())
+
+
+def get_image_channels(image: ImageObject) -> Tuple[str, ...]:
 # Returns the channel names for an already open image.
 # Pillow: ("R","G","B"), ("R","G","B","A"), ("L",)
-    return im.getbands()
+    return image.getbands()
 
 
-def get_channel(im: ImageObj, ch: str) -> ImageObj:
-# Extracts a single channel by name ("R","G","B","A","L")
-    return im.getchannel(ch.upper())
-
-
-def get_mode(im: Any) -> str:
+def get_image_mode(image: Any) -> str:
 # Return the Pillow image mode: "RGB", "RGBA", "L"
-    return im.mode
+    return image.mode
 
 
-def get_size(im: ImageObj) -> Tuple[int, int]:
+def get_size(image: ImageObject) -> Tuple[int, int]:
 # Returns the image size as (width, height)
-    return im.size
+    return image.size
 
 
-def merge_channels(mode: str, channels: Sequence[Any]) -> ImageObj:
+def merge_channels(mode: str, channels: Sequence[Any]) -> ImageObject:
 # Merge separate channels into a single image.
     return _PIL.merge(mode, tuple(channels))
 
 
-def new_gray(size: Tuple[int, int], fill: int) -> Any:
+def new_grayscale_image(size: Tuple[int, int], fill: int) -> Any:
 # Create a new grayscale image.
     return _PIL.new("L", size, fill)
 
 
-def open_image(path: str) -> ImageObj:
+def open_image(path: str) -> ImageObject:
     return _PIL.open(path)
 
 
-def resize(im: ImageObj, size: Tuple[int, int]) -> ImageObj:
+def resize(image: ImageObject, size: Tuple[int, int]) -> ImageObject:
 # Resize an image using bilinear resampling.
-    return im.resize(size, _PIL.BILINEAR)
+    return image.resize(size, _PIL.BILINEAR)
 
 
-def save_image(im: Any, path: str) -> None:
-    im.save(path)
+def save_image(image: Any, path: str) -> None:
+    image.save(path)
 
 
 
@@ -77,59 +77,59 @@ def save_image(im: Any, path: str) -> None:
 
 
 
-def is_grayscale(im: ImageObj) -> bool:
+def is_grayscale(image: ImageObject) -> bool:
 # Returns True if the image is of type grayscale image.
 
-    m = get_mode(im)
-    return m in ("L", "LA") or m == "I" or str(m).startswith("I;16")
+    mode = get_image_mode(image)
+    return mode in ("L", "LA") or mode == "I" or str(mode).startswith("I;16")
 
 
-def are_channels_equal(im: ImageObj, ch1: str, ch2: str) -> bool:
+def are_channels_equal(image: ImageObject, input_channel1: str, input_channel2: str) -> bool:
 # Returns True if both channels are identical.
 
     try:
-        c1 = get_channel(im, ch1)
-        c2 = get_channel(im, ch2)
-        return ImageChops.difference(c1, c2).getbbox() is None
+        channel1 = get_channel(image, input_channel1)
+        channel2 = get_channel(image, input_channel2)
+        return ImageChops.difference(channel1, channel2).getbbox() is None
     except Exception:
         return False
 
 
-def is_rgb_grayscale(img: ImageObj) -> bool:
+def is_rgb_grayscale(image: ImageObject) -> bool:
 # Checks if RGB texture is just a grayscale image saved as RGB instead of L.
 
     try:
-        ext = img.getextrema()  # (Rmin,Rmax),(Gmin,Gmax),(Bmin,Rmax),(Amin,Amax)
+        ext = image.getextrema()  # (Rmin,Rmax),(Gmin,Gmax),(Bmin,Rmax),(Amin,Amax)
         if not ext or len(ext) < 2 or ext[0] != ext[1]:
             return False
         # Pre-validation: checks if the channels extremes are the same.
 
     except Exception:
         pass
-    return are_channels_equal(img, "R", "G")
+    return are_channels_equal(image, "R", "G")
 
 
-def to_grayscale(img: ImageObj) -> ImageObj:
+def convert_to_grayscale(image: ImageObject) -> ImageObject:
 # Converts an image to 8-bit grayscale.
-    mode = img.mode
+    mode = image.mode
     if mode == "L":
-        return img
+        return image
     if mode in ("I", "I;16", "I;16L", "I;16B"):
-        return _16_to_8bit(img)
-    return img.convert("L")
+        return _16_to_8bit(image)
+    return image.convert("L")
 
 
-def _16_to_8bit(img: ImageObj) -> ImageObj:
+def _16_to_8bit(image: ImageObject) -> ImageObject:
 # Scales down 16bit range to a 8bit, so values are properly maintained instead of being clipped.
 
 # Preparing the image:
-    if img.mode == "I":
-        img16 = img.convert("I;16")
-    elif img.mode in ("I;16", "I;16L", "I;16B"):
-        img16 = img if img.mode == "I;16" else img.convert("I;16")
+    if image.mode == "I":
+        img16 = image.convert("I;16")
+    elif image.mode in ("I;16", "I;16L", "I;16B"):
+        img16 = image if image.mode == "I;16" else image.convert("I;16")
     # Normalizes the image type to 16bit LE.
     else:
-        return img.convert("L")
+        return image.convert("L")
     # If the image is just 8bit grayscale, passes it though.
 
     raw = img16.tobytes("raw", "I;16")  # LE 16bit
