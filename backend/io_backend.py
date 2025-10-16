@@ -23,9 +23,10 @@ class ConvertedEXRImage:
 
 @dataclass
 class CPContext:
-    work_directory: str = None # Absolute path for a temporary folder.
+    input_folder: Optional[str] = None
+    work_directory: str = "" # Absolute path for a temporary folder.
     selection_paths_map: Dict[str, str] = field(default_factory=dict) # Maps paths relative to the root directory to their absolute file paths.
-    export_extension: str = "" # Validated file extension set in config.
+    export_extension: str = "png" # Validated file extension set in config.
     textures_converted_from_raw: Dict[str, ConvertedEXRImage] = field(default_factory=dict)  # Collection of temporary converted .exr files for processing in the main module, their raw_source path, texture set name and its texture type.
 
 
@@ -84,12 +85,12 @@ def split_by_parent(context: "CPContext") -> Dict[str, List[str]]:
     return {parent_directory: sorted(filename) for parent_directory, filename in sorted(filenames_by_parent_folder.items())}
 
 
-def list_initial_files(input_folder: str, context: "CPContext" = None, recursive: bool = False, ) -> list[str]:
+def list_initial_files(context: "CPContext" = None, recursive: bool = False, ) -> list[str]:
 # Lists candidate files from input_folder. On Windows returns paths relative to work_dir - where are located the input files.
 # Recursive is not used on Windows.
 
     source_file_types = ALLOWED_FILE_TYPES + RAW_SOURCE_TYPES
-
+    input_folder: str = context.input_folder if context else ""
 
     if not input_folder:
         if context is not None:
@@ -129,7 +130,7 @@ def list_initial_files(input_folder: str, context: "CPContext" = None, recursive
     return relative_paths
 
 
-def prepare_workspace(_assets_keys_unused: List[str], context: "CPContext" = None) -> None:
+def prepare_workspace(context: "CPContext" = None) -> None:
 # Resolves each relative path from ctx.selection_paths (keys) to an absolute path under ctx.work_dir (values).
 # Removes entries whose path contains DEST_FOLDER_NAME or BACKUP_FOLDER_NAME to avoid reprocessing output/backup folders.
 
@@ -169,7 +170,7 @@ def prepare_workspace(_assets_keys_unused: List[str], context: "CPContext" = Non
         context.selection_paths_map[relative_path] = absolute_path
 
 
-def save_image(image: ImageObject, output_directory: str, filename: str, packing_mode_name: str, context: Optional["CPContext"]) -> None:
+def save_generated_texture(image: ImageObject, output_directory: str, filename: str, packing_mode_name: str, context: Optional["CPContext"]) -> None:
 # On Windows just saves to out_dir.
 # Packing_mode_name and context are used only in the Unreal version.
 

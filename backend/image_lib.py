@@ -53,7 +53,7 @@ def merge_channels(mode: str, channels: Sequence[Any]) -> ImageObject:
     return _PIL.merge(mode, tuple(channels))
 
 
-def new_grayscale_image(size: Tuple[int, int], fill: int) -> Any:
+def new_image_grayscale(size: Tuple[int, int], fill: int) -> Any:
 # Create a new grayscale image.
     return _PIL.new("L", size, fill)
 

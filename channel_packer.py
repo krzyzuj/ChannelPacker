@@ -10,16 +10,15 @@ from typing import Dict, List, Optional, Set, Tuple, Union, cast
 
 
 from backend.image_lib import (ImageObject, close_image, get_image_channels, get_channel,
-                               get_image_mode, get_size, is_grayscale, is_rgb_grayscale, merge_channels, new_grayscale_image, open_image, resize, convert_to_grayscale)
+                               get_image_mode, get_size, is_grayscale, is_rgb_grayscale, merge_channels, new_image_grayscale, open_image, resize, convert_to_grayscale)
 
 from backend.texture_classes import (ChannelMapping, MapNameAndResolution, PackingMode, SetEntry,
                                      TextureMapCollection, TextureMapData, TextureSetInfo, TextureSet, ValidModeEntry)
 
 from backend.io_backend import (ConvertedEXRImage, CPContext, context_validate_export_extension, split_by_parent,
-                                list_initial_files, prepare_workspace, save_image, move_used_map, cleanup)
+                                list_initial_files, prepare_workspace, save_generated_texture, move_used_map, cleanup)
 
-from settings import (TextureTypeConfig, ALLOWED_FILE_TYPES, BACKUP_FOLDER_NAME,
-                      TARGET_FOLDER_NAME, INPUT_FOLDER, PACKING_MODES, RESIZE_STRATEGY, SHOW_DETAILS, TEXTURE_CONFIG)
+from settings import (TextureTypeConfig, ALLOWED_FILE_TYPES, BACKUP_FOLDER_NAME, TARGET_FOLDER_NAME, INPUT_FOLDER, PACKING_MODES, RESIZE_STRATEGY, SHOW_DETAILS, TEXTURE_CONFIG)
 
 from utils import (check_texture_suffix_mismatch, close_image_files, detect_size_suffix,
      group_paths_by_folder, is_power_of_two, log, make_output_dirs, match_suffixes, resolution_to_suffix, validate_safe_folder_name)
@@ -64,6 +63,12 @@ def channel_packer(input_folder: Optional[str] = None) -> None:
     packed_any_textures: bool = False
 
 
+# If provided, taking into account the input folder specified via CLI:
+    if input_folder:
+        folder: str = os.path.abspath(input_folder)
+    if hasattr(context, "input_folder"):
+        setattr(context, "input_folder", folder)
+
 
 # Validating config and setting up the files:
     _validate_config(RESIZE_STRATEGY, context) # Validate base settings (export ext, resize strategy).
@@ -86,7 +91,7 @@ def channel_packer(input_folder: Optional[str] = None) -> None:
     for relative_parent_path, files_in_group in grouped_files.items():
         final_folder_path: str = work_directory if relative_parent_path == "." else os.path.join(work_directory, relative_parent_path)
         final_folder_path = os.path.abspath(final_folder_path)
-        target_directory, backup_directory = make_output_dirs(final_folder_path)
+        target_directory, backup_directory = make_output_dirs(final_folder_path, target_folder_name = TARGET_FOLDER_NAME, backup_folder_name = BACKUP_FOLDER_NAME)
     # Creates output and backup folders (if set) per texture set's folder.
 
 
@@ -98,7 +103,7 @@ def channel_packer(input_folder: Optional[str] = None) -> None:
 
 
 # Collecting maps into texture sets for each folder:
-        raw_textures: Dict[str, TextureSet] = _build_texture_sets(final_folder_path, files_in_group, context=context) # Collecting maps into texture sets data.
+        raw_textures: Dict[str, TextureSet] = _build_texture_sets(final_folder_path, files_in_group, context = context) # Collecting maps into texture sets data.
         processed_file_groups_order.append(relative_parent_path)
 
 # Filtering modes to those with at least two required maps, then choosing the target resolution and logging any mismatches.
@@ -135,9 +140,9 @@ def channel_packer(input_folder: Optional[str] = None) -> None:
                 texture_maps_for_mode: TextureMapCollection = packing_mode.texture_maps_for_mode
 
                 is_valid, target_resolution = _check_textures_and_pick_target_resolution(
-                    texture_maps_for_mode= texture_maps_for_mode,
-                    resize_strategy= RESIZE_STRATEGY,
-                    packing_mode_name= packing_mode.mode["mode_name"],
+                    texture_maps_for_mode = texture_maps_for_mode,
+                    resize_strategy = RESIZE_STRATEGY,
+                    packing_mode_name = packing_mode.mode["mode_name"],
                 )
                 # Finds listed textures resolutions and checks if textures have mip friendly power-of-two (2^n) res.
 
@@ -305,8 +310,8 @@ def _validate_config(resize_strategy: str, context: Optional[CPContext] = None) 
 # Runs initial validation for the config.
 # Later on the config is checked for packing mode validity when running valid_modes for each packing mode.
 
-    backup_folder_name: str = validate_safe_folder_name(BACKUP_FOLDER_NAME)
-    target_folder_name: str = validate_safe_folder_name(TARGET_FOLDER_NAME)
+    validate_safe_folder_name(BACKUP_FOLDER_NAME)
+    validate_safe_folder_name(TARGET_FOLDER_NAME)
     # Checks if folder names don't contain unsupported characters.
 
 
@@ -341,7 +346,7 @@ def _validate_and_setup_files(input_folder: str, context: CPContext, valid_packi
 
 
     effective_input: str = input_folder or "" # Allows overriding an input path set in config when run from the system's CLI.
-    initial_files: List[str] = list_initial_files(effective_input, context)
+    initial_files: List[str] = list_initial_files(context)
 
     if not initial_files:
         valid_output_file_extensions: str = ", ".join((e if str(e).startswith(".") else f".{e}") for e in ALLOWED_FILE_TYPES)
@@ -356,7 +361,7 @@ def _validate_and_setup_files(input_folder: str, context: CPContext, valid_packi
     # Limits the file selection to textures required by the packing modes.
 
 
-    prepare_workspace(list(context.selection_paths_map.keys()), context)
+    prepare_workspace(context)
     # When run from the Engine, exports textures to a temporary workspace.
     # Resolves and fills absolute disk paths for each relative/package-path key.
 
@@ -477,7 +482,7 @@ def _extract_info_from_texture_set_name(file_path_or_asset: str) -> Optional[Tex
             pattern = match_suffixes(file_name_lower, type_suffix, size_suffix or None)
             if not pattern:
                 continue
-            regex = re.compile(pattern, flags=re.IGNORECASE)
+            regex = re.compile(pattern, flags = re.IGNORECASE)
             match = regex.search(file_name)
             if not match:
                 continue
@@ -524,7 +529,7 @@ def _preselect_required_textures(valid_packing_modes: List["PackingMode"], conte
     #     "untyped": ["/Game/UI/Logo"]}} # When a texture type can't be determined
 
 
-    packed_textures_suffixes = {_extract_mode_name(m).upper() for m in valid_packing_modes if _extract_mode_name(m)} # Get final suffixes for the created channel packed, to filter out maps that could already be there from previous script run.
+    packed_textures_suffixes = {_extract_mode_name(mode).upper() for mode in valid_packing_modes if _extract_mode_name(mode)} # Get final suffixes for the created channel packed, to filter out maps that could already be there from previous script run.
 
 # Collecting all the texture sets and their files into unique grouped sets:
     texture_sets: Dict[str, SetEntry] = {} # Collection of texture sets where key is the unique id derived from textures paths and set names. Contains display_name, recognized map types : lists of file paths, and untyped files.
@@ -553,24 +558,24 @@ def _preselect_required_textures(valid_packing_modes: List["PackingMode"], conte
 
             extracted_info: Optional[Tuple[str, str, str, str]] = _extract_info_from_texture_set_name(asset_name)
             if extracted_info:
-                tex_set_name, tex_type, _, _ = extracted_info
-                texture_id = f"{group_folder}:{tex_set_name.lower()}"
+                texture_set_name, texture_type, _, _ = extracted_info
+                texture_id = f"{group_folder}:{texture_set_name.lower()}"
                 # Unique id built from the parent folder and set name; avoids collisions when identical set names exist in different directories.
 
                 entry = texture_sets.get(texture_id)
                 if entry is None: # Creates a texture set entry for every first texture from the same texture set.
-                    entry = SetEntry(display_name=tex_set_name, types={}, untyped=[])
+                    entry = SetEntry(display_name = texture_set_name, types = {}, untyped = [])
                     texture_sets[texture_id] = entry
-                entry["types"].setdefault(tex_type.lower(), []).append(key) # Assigns a texture type, and its file path to a texture set.
+                entry["types"].setdefault(texture_type.lower(), []).append(key) # Assigns a texture type, and its file path to a texture set.
             # Combines all the textures into the sets [types] - if the script was able to derive a texture set from the name, e.g., "Texture_AO.png".
 
             else:
                 derived_asset_name = "_".join(asset_name_no_ext.split("_")[:-1]) if "_" in asset_name_no_ext else asset_name_no_ext
-                tex_set_name = derived_asset_name or asset_name_no_ext
-                texture_id = f"{group_folder}:{tex_set_name.lower()}"
+                texture_set_name = derived_asset_name or asset_name_no_ext
+                texture_id = f"{group_folder}:{texture_set_name.lower()}"
                 entry = texture_sets.get(texture_id)
                 if entry is None:
-                    entry = SetEntry(display_name=tex_set_name, types={}, untyped=[])
+                    entry = SetEntry(display_name = texture_set_name, types = {}, untyped = [])
                     texture_sets[texture_id] = entry
                 entry["untyped"].append(key)
             # List all remaining textures that are not part of any texture set [untyped], e.g., "Texture.png"
@@ -1064,7 +1069,7 @@ def _generate_channel_packed_texture(
             if target_texture is None:
                 default_map_value: int
                 _ , default_map_value = TEXTURE_CONFIG[texture_name.lower()]["default"] # From the tuple (G/RGB, int), takes only the default fill value.
-                loaded_textures[texture_name] = new_grayscale_image(target_resolution, default_map_value)
+                loaded_textures[texture_name] = new_image_grayscale(target_resolution, default_map_value)
                 missing_texture_maps.append(texture_name)
             # Gets default values for each map type from config and creates a missing map for packing if necessary.
             elif get_size(target_texture) != target_resolution:
@@ -1083,7 +1088,7 @@ def _generate_channel_packed_texture(
                     if texture_type.lower() == base_texture_type:
                         default_map_value: int = texture_config["default"][1] # Uses default fill value of a corresponding map, e.g., ("RGB", 128)
                         break
-                texture = new_grayscale_image(target_resolution, default_map_value)
+                texture = new_image_grayscale(target_resolution, default_map_value)
                 missing_texture_maps.append(base_texture_type)
             # Creates maps with derived default values if missing; case-insensitive.
 
@@ -1101,7 +1106,7 @@ def _generate_channel_packed_texture(
         resolution_suffix: str = (f"_{resolution_to_suffix(target_resolution)}" if any(tex.suffix for tex in texture_maps_for_mode.values()) else "") # Only if the original file name also has size suffix.
         filename: str = f"{display_name}_{packing_mode_suffix}{resolution_suffix}"
 
-        save_image(packed_texture, target_directory, filename, packing_mode_name, context)
+        save_generated_texture(packed_texture, target_directory, filename, packing_mode_name, context)
 
 
         if backup_directory:

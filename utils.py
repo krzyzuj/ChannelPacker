@@ -8,7 +8,7 @@ from collections import defaultdict
 from functools import lru_cache
 import importlib.util
 
-from settings import (BACKUP_FOLDER_NAME, TARGET_FOLDER_NAME, SIZE_SUFFIXES)
+from settings import SIZE_SUFFIXES
 
 from backend.texture_classes  import (TextureMapData, MapNameAndResolution)
 
@@ -238,17 +238,17 @@ def is_power_of_two(n: int) -> bool:
     return (n & (n - 1) == 0) and n != 0
 
 
-def make_output_dirs(base_directory: str) -> tuple[str, Optional[str]]:
+def make_output_dirs(base_directory: str, * , target_folder_name: Optional[str], backup_folder_name: Optional[str]) -> tuple[str, Optional[str]]:
 # Creates/returns the output and optional backup directories for a given base path:
 
     base_directory = os.path.abspath(base_directory or ".")
 
-    target_folder_name = (TARGET_FOLDER_NAME or "").strip()
+    target_folder_name = (target_folder_name or "").strip()
     target_folder_directory = os.path.join(base_directory, target_folder_name) if target_folder_name else base_directory
     os.makedirs(target_folder_directory, exist_ok=True)
 
     backup_folder_directory = None
-    backup_folder_name = (BACKUP_FOLDER_NAME or "").strip()
+    backup_folder_name = (backup_folder_name or "").strip()
     if backup_folder_name:
         backup_folder_directory = os.path.join(base_directory, backup_folder_name)
         os.makedirs(backup_folder_directory, exist_ok=True)
@@ -293,15 +293,15 @@ def resolution_to_suffix(size: Tuple[int, int]) -> str:
     return f"{width}px"
 
 
-def validate_safe_folder_name(raw_folder_name: Optional[str]) -> str:
+def validate_safe_folder_name(raw_folder_name: Optional[str]) -> None:
 # Validates that the custom folder name doesn't include unsupported characters.
 
     folder_name: str = (raw_folder_name or "")
     if folder_name.strip() == "":
-        return ""
+        return
 
     if any(invalid_character in folder_name for invalid_character in '\\/:*?"<>|'):
         log(f"Aborted: invalid folder name '{raw_folder_name}'. It cannot contain \\ / : * ? \" < > |", "error")
         # Prints error.
         raise SystemExit(1)
-    return folder_name.strip()
+    return
